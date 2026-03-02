@@ -40,3 +40,13 @@ java {
     targetCompatibility = JavaVersion.VERSION_21
     withSourcesJar()
 }
+
+def releaseJarBaseName = "NCI-v${project.mod_version}-${project.minecraft_version}"
+
+tasks.named("remapJar") {
+    archiveFileName = "${releaseJarBaseName}.jar"
+}
+
+tasks.named("remapSourcesJar") {
+    archiveFileName = "${releaseJarBaseName}-sources.jar"
+}
