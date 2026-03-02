@@ -1,0 +1,28 @@
+# Gradle and build outputs
+.gradle/
+.gradle-user/
+build/
+out/
+run/
+
+# Local toolchains/caches
+.java/
+.kotlin/
+
+# Java artifacts and crash logs
+*.class
+*.log
+hs_err_pid*
+replay_pid*
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db

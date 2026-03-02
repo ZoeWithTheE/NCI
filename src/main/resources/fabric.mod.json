@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "nexo_client",
+  "version": "${version}",
+  "name": "Nexo Client",
+  "description": "Fabric client for Nexo registry sync.",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.nexo.client.NexoClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21.10",
+    "fabric-api": "*"
+  }
+}
