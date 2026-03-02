@@ -318,7 +318,16 @@ public final class NexoClient implements ClientModInitializer {
         }
 
         var player = client.player;
+        if (player.networkHandler == null) {
+            return false;
+        }
+
         var features = player.networkHandler.getEnabledFeatures();
+        if (features.isEmpty()) {
+            // Join can fire before enabled features are negotiated; rebuilding now can blank the search tab.
+            return false;
+        }
+
         var lookup = player.getEntityWorld().getRegistryManager();
         boolean opTab = player.isCreativeLevelTwoOp();
 
