@@ -9,7 +9,6 @@ import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
-import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.component.DataComponentTypes;
@@ -52,7 +51,6 @@ public final class NexoClient implements ClientModInitializer {
 
     private static final ItemStack DEFAULT_TAB_ICON = new ItemStack(Items.BOOK);
     private static final Map<String, TabGroupData> syncedGroups = new LinkedHashMap<>();
-    private static final List<ItemStack> syncedMaterials = new ArrayList<>();
     private static final List<MutableText> tabSlotTitles = new ArrayList<>(MAX_DYNAMIC_GROUP_TABS);
     private static final List<String> tabSlotGroupIds = new ArrayList<>(MAX_DYNAMIC_GROUP_TABS);
 
@@ -71,27 +69,6 @@ public final class NexoClient implements ClientModInitializer {
             registerSlotTab(slot);
         }
         resetTabSlots();
-
-        ItemGroupEvents.modifyEntriesEvent(ItemGroups.SEARCH).register(entries -> {
-            if (syncedMaterials.isEmpty()) {
-                return;
-            }
-            List<ItemStack> snapshot = List.copyOf(syncedMaterials);
-            boolean warned = false;
-            for (ItemStack material : snapshot) {
-                if (material == null || material.isEmpty()) {
-                    continue;
-                }
-                try {
-                    entries.add(material.copy());
-                } catch (RuntimeException e) {
-                    if (!warned) {
-                        LOGGER.warn("Skipping invalid Nexo item while building search tab entries", e);
-                        warned = true;
-                    }
-                }
-            }
-        });
 
         ClientPlayNetworking.registerGlobalReceiver(RegistryPayload.ID, (payload, context) -> {
             context.client().execute(() -> {
@@ -223,8 +200,6 @@ public final class NexoClient implements ClientModInitializer {
         // Replace entire synced state in one pass so previous payload data cannot leak into the new snapshot.
         syncedGroups.clear();
         syncedGroups.putAll(rebuiltGroups);
-        syncedMaterials.clear();
-        syncedMaterials.addAll(buildMaterialSnapshot(rebuiltGroups.values()));
         resetTabSlots();
 
         int slot = 0;
@@ -232,32 +207,6 @@ public final class NexoClient implements ClientModInitializer {
             assignGroupToTabSlot(slot, rebuilt.id(), rebuilt.title());
             slot++;
         }
-    }
-
-    private static List<ItemStack> buildMaterialSnapshot(Iterable<TabGroupData> groups) {
-        List<ItemStack> materials = new ArrayList<>();
-        for (TabGroupData group : groups) {
-            for (ItemStack source : group.items()) {
-                if (source == null || source.isEmpty()) {
-                    continue;
-                }
-
-                ItemStack normalized = source.copy();
-                normalized.setCount(1);
-
-                boolean duplicate = false;
-                for (ItemStack existing : materials) {
-                    if (ItemStack.areItemsAndComponentsEqual(existing, normalized)) {
-                        duplicate = true;
-                        break;
-                    }
-                }
-                if (!duplicate) {
-                    materials.add(normalized);
-                }
-            }
-        }
-        return List.copyOf(materials);
     }
 
     private static void registerSlotTab(int slotIndex) {
@@ -292,7 +241,7 @@ public final class NexoClient implements ClientModInitializer {
                             }
 
                             for (ItemStack stack : current.items()) {
-                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_TAB_ONLY);
+                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
                             }
                         })
                         .build()
@@ -328,12 +277,11 @@ public final class NexoClient implements ClientModInitializer {
 
     private static void clearSyncedState() {
         syncedGroups.clear();
-        syncedMaterials.clear();
         resetTabSlots();
     }
 
     private static boolean hasSyncedContent() {
-        return !syncedGroups.isEmpty() || !syncedMaterials.isEmpty();
+        return !syncedGroups.isEmpty();
     }
 
     private static boolean refreshItemGroups(MinecraftClient client) {
