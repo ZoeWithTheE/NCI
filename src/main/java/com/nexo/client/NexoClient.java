@@ -352,7 +352,7 @@ public final class NexoClient implements ClientModInitializer {
             return false;
         }
 
-        var lookup = player.getEntityWorld().getRegistryManager();
+        var lookup = client.world.getRegistryManager();
         boolean opTab = player.isCreativeLevelTwoOp();
 
         // Force one rebuild, then settle on the context used by the creative screen.
