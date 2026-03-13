@@ -300,12 +300,11 @@ public final class NexoClient implements ClientModInitializer {
             return false;
         }
 
-        var lookup = client.world.getRegistryManager();
+        // Use the same registry the creative screen itself uses.
+        var lookup = player.networkHandler.getRegistryManager();
         boolean opTab = player.isCreativeLevelTwoOp();
 
-        // Force one rebuild, then settle on the context used by the creative screen.
         try {
-            ItemGroups.updateDisplayContext(features, opTab, lookup.toImmutable());
             ItemGroups.updateDisplayContext(features, opTab, lookup);
             return true;
         } catch (RuntimeException e) {
