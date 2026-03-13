@@ -12,6 +12,7 @@ import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.fabric.api.itemgroup.v1.ItemGroupEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ItemGroups;
@@ -72,8 +73,23 @@ public final class NexoClient implements ClientModInitializer {
         resetTabSlots();
 
         ItemGroupEvents.modifyEntriesEvent(ItemGroups.SEARCH).register(entries -> {
-            for (ItemStack material : syncedMaterials) {
-                entries.add(material.copy());
+            if (syncedMaterials.isEmpty()) {
+                return;
+            }
+            List<ItemStack> snapshot = List.copyOf(syncedMaterials);
+            boolean warned = false;
+            for (ItemStack material : snapshot) {
+                if (material == null || material.isEmpty()) {
+                    continue;
+                }
+                try {
+                    entries.add(material.copy());
+                } catch (RuntimeException e) {
+                    if (!warned) {
+                        LOGGER.warn("Skipping invalid Nexo item while building search tab entries", e);
+                        warned = true;
+                    }
+                }
             }
         });
 
@@ -84,11 +100,10 @@ public final class NexoClient implements ClientModInitializer {
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            syncedGroups.clear();
-            syncedMaterials.clear();
-            resetTabSlots();
+            boolean hadSyncedContent = hasSyncedContent();
+            clearSyncedState();
             registryReceived = false;
-            pendingGroupRefresh = true;
+            pendingGroupRefresh = hadSyncedContent;
             helloAttempts = 0;
             helloRetryCountdown = 0;
             sendHello("join");
@@ -124,11 +139,10 @@ public final class NexoClient implements ClientModInitializer {
     }
 
     private static boolean applyRegistryPayload(RegistryPayload payload, MinecraftClient client) {
+        boolean hadSyncedContent = hasSyncedContent();
         if (!isProtocolSupported(payload.negotiatedProtocol())) {
-            syncedGroups.clear();
-            syncedMaterials.clear();
-            resetTabSlots();
-            pendingGroupRefresh = true;
+            clearSyncedState();
+            pendingGroupRefresh = hadSyncedContent;
             LOGGER.warn(
                     "Rejected registry payload protocol {} (client supports {}-{})",
                     payload.negotiatedProtocol(),
@@ -139,10 +153,8 @@ public final class NexoClient implements ClientModInitializer {
         }
 
         if (payload.status() != STATUS_OK) {
-            syncedGroups.clear();
-            syncedMaterials.clear();
-            resetTabSlots();
-            pendingGroupRefresh = true;
+            clearSyncedState();
+            pendingGroupRefresh = hadSyncedContent;
 
             if (payload.status() == STATUS_INCOMPATIBLE) {
                 LOGGER.warn("Server {} rejected client: {}", payload.serverVersion(), payload.message());
@@ -152,11 +164,11 @@ public final class NexoClient implements ClientModInitializer {
                 LOGGER.warn("Server {} sent unknown status {}: {}", payload.serverVersion(), payload.status(), payload.message());
             }
 
-            boolean terminalStatus = payload.status() == STATUS_NO_PERMISSION;
-            if (terminalStatus && client.player != null) {
+            if (payload.status() == STATUS_NO_PERMISSION && client.player != null) {
                 client.player.sendMessage(Text.literal("[Nexo] " + payload.message()), false);
             }
-            return terminalStatus;
+            // Any explicit status response from the server is terminal — stop retrying.
+            return true;
         }
 
         rebuildSyncedGroups(payload.groups());
@@ -194,7 +206,9 @@ public final class NexoClient implements ClientModInitializer {
             List<ItemStack> itemCopies = new ArrayList<>(group.items().size());
             for (ItemStack stack : group.items()) {
                 if (stack != null && !stack.isEmpty()) {
-                    itemCopies.add(stack.copy());
+                    ItemStack copy = stack.copy();
+                    copy.remove(DataComponentTypes.CONSUMABLE);
+                    itemCopies.add(copy);
                 }
             }
 
@@ -278,7 +292,7 @@ public final class NexoClient implements ClientModInitializer {
                             }
 
                             for (ItemStack stack : current.items()) {
-                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
+                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_TAB_ONLY);
                             }
                         })
                         .build()
@@ -312,6 +326,16 @@ public final class NexoClient implements ClientModInitializer {
         return protocol >= MIN_SUPPORTED_PROTOCOL && protocol <= MAX_SUPPORTED_PROTOCOL;
     }
 
+    private static void clearSyncedState() {
+        syncedGroups.clear();
+        syncedMaterials.clear();
+        resetTabSlots();
+    }
+
+    private static boolean hasSyncedContent() {
+        return !syncedGroups.isEmpty() || !syncedMaterials.isEmpty();
+    }
+
     private static boolean refreshItemGroups(MinecraftClient client) {
         if (client.player == null) {
             return false;
@@ -332,9 +356,14 @@ public final class NexoClient implements ClientModInitializer {
         boolean opTab = player.isCreativeLevelTwoOp();
 
         // Force one rebuild, then settle on the context used by the creative screen.
-        ItemGroups.updateDisplayContext(features, opTab, lookup.toImmutable());
-        ItemGroups.updateDisplayContext(features, opTab, lookup);
-        return true;
+        try {
+            ItemGroups.updateDisplayContext(features, opTab, lookup.toImmutable());
+            ItemGroups.updateDisplayContext(features, opTab, lookup);
+            return true;
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to refresh creative tab entries; will retry later", e);
+            return false;
+        }
     }
 
     private record HelloPayload(
