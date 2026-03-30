@@ -77,7 +77,7 @@ public final class NexoClient implements ClientModInitializer {
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            boolean hadSyncedContent = hasSyncedContent();
+            boolean hadSyncedContent = !syncedGroups.isEmpty();
             clearSyncedState();
             registryReceived = false;
             pendingGroupRefresh = hadSyncedContent;
@@ -116,7 +116,7 @@ public final class NexoClient implements ClientModInitializer {
     }
 
     private static boolean applyRegistryPayload(RegistryPayload payload, MinecraftClient client) {
-        boolean hadSyncedContent = hasSyncedContent();
+        boolean hadSyncedContent = !syncedGroups.isEmpty();
         if (!isProtocolSupported(payload.negotiatedProtocol())) {
             clearSyncedState();
             pendingGroupRefresh = hadSyncedContent;
@@ -132,7 +132,6 @@ public final class NexoClient implements ClientModInitializer {
         if (payload.status() != STATUS_OK) {
             clearSyncedState();
             pendingGroupRefresh = hadSyncedContent;
-
             if (payload.status() == STATUS_INCOMPATIBLE) {
                 LOGGER.warn("Server {} rejected client: {}", payload.serverVersion(), payload.message());
             } else if (payload.status() == STATUS_NO_PERMISSION) {
@@ -280,10 +279,6 @@ public final class NexoClient implements ClientModInitializer {
         resetTabSlots();
     }
 
-    private static boolean hasSyncedContent() {
-        return !syncedGroups.isEmpty();
-    }
-
     private static boolean refreshItemGroups(MinecraftClient client) {
         if (client.player == null) {
             return false;
@@ -298,6 +293,11 @@ public final class NexoClient implements ClientModInitializer {
         if (features.isEmpty()) {
             // Join can fire before enabled features are negotiated; rebuilding now can blank the search tab.
             return false;
+        }
+
+        if (syncedGroups.isEmpty()) {
+            // No NCI content — vanilla handles updateDisplayContext itself; calling it here blanks vanilla search.
+            return true;
         }
 
         // Use the same registry the creative screen itself uses.
