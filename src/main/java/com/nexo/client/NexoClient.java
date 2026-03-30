@@ -40,7 +40,6 @@ public final class NexoClient implements ClientModInitializer {
     private static final int STATUS_INCOMPATIBLE = 1;
     private static final int STATUS_NO_PERMISSION = 2;
 
-    private static final int HELLO_INITIAL_DELAY_TICKS = 10;
     private static final int HELLO_RETRY_TICKS = 20;
     private static final int MAX_HELLO_ATTEMPTS = 6;
     private static final int MAX_DYNAMIC_GROUP_TABS = 8;
@@ -83,7 +82,8 @@ public final class NexoClient implements ClientModInitializer {
             registryReceived = false;
             pendingGroupRefresh = hadSyncedContent;
             helloAttempts = 0;
-            helloRetryCountdown = HELLO_INITIAL_DELAY_TICKS;
+            helloRetryCountdown = 0;
+            sendHello("join");
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
