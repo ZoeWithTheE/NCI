@@ -240,8 +240,11 @@ public final class NexoClient implements ClientModInitializer {
                                 return;
                             }
 
+                            java.util.Set<net.minecraft.item.Item> seen = new java.util.HashSet<>();
                             for (ItemStack stack : current.items()) {
-                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
+                                if (seen.add(stack.getItem())) {
+                                    entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
+                                }
                             }
                         })
                         .build()
