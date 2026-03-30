@@ -239,8 +239,12 @@ public final class NexoClient implements ClientModInitializer {
                                 return;
                             }
 
+                            java.util.List<ItemStack> seen = new java.util.ArrayList<>();
                             for (ItemStack stack : current.items()) {
-                                entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
+                                if (seen.stream().noneMatch(s -> ItemStack.areItemsAndComponentsEqual(s, stack))) {
+                                    seen.add(stack);
+                                    entries.add(stack.copy(), ItemGroup.StackVisibility.PARENT_AND_SEARCH_TABS);
+                                }
                             }
                         })
                         .build()
