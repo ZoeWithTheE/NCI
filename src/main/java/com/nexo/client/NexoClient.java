@@ -300,6 +300,11 @@ public final class NexoClient implements ClientModInitializer {
             return false;
         }
 
+        if (syncedGroups.isEmpty()) {
+            // No NCI content — vanilla handles updateDisplayContext itself; calling it here blanks vanilla search.
+            return true;
+        }
+
         // Use the same registry the creative screen itself uses.
         var lookup = player.networkHandler.getRegistryManager();
         boolean opTab = player.isCreativeLevelTwoOp();
