@@ -536,11 +536,14 @@ public final class NexoClient implements ClientModInitializer {
                     serverVersion = buf.readString(64);
                     message = buf.readString(256);
 
-                    int featureCount = buf.readVarInt();
-                    for (int i = 0; i < featureCount; i++) {
-                        String feature = buf.readString(64);
-                        if (i < 64) {
-                            serverFeatures.add(feature);
+                    // Server features were added in protocol 2; protocol 1 servers do not send this field
+                    if (negotiatedProtocol >= 2) {
+                        int featureCount = buf.readVarInt();
+                        for (int i = 0; i < featureCount; i++) {
+                            String feature = buf.readString(64);
+                            if (i < 64) {
+                                serverFeatures.add(feature);
+                            }
                         }
                     }
                 } else {
@@ -588,9 +591,11 @@ public final class NexoClient implements ClientModInitializer {
             buf.writeVarInt(payload.negotiatedProtocol);
             buf.writeString(payload.serverVersion, 64);
             buf.writeString(payload.message, 256);
-            buf.writeVarInt(payload.serverFeatures.size());
-            for (String feature : payload.serverFeatures) {
-                buf.writeString(feature, 64);
+            if (payload.negotiatedProtocol >= 2) {
+                buf.writeVarInt(payload.serverFeatures.size());
+                for (String feature : payload.serverFeatures) {
+                    buf.writeString(feature, 64);
+                }
             }
 
             if (payload.status == STATUS_OK) {
