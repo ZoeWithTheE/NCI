@@ -1,6 +1,5 @@
 package com.nexo.client;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,8 +23,6 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
-import net.minecraft.text.ClickEvent;
-import net.minecraft.util.Formatting;
 import net.minecraft.util.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,13 +57,6 @@ public final class NexoClient implements ClientModInitializer {
     private static final List<MutableText> tabSlotTitles = new ArrayList<>(MAX_DYNAMIC_GROUP_TABS);
     private static final List<String> tabSlotGroupIds = new ArrayList<>(MAX_DYNAMIC_GROUP_TABS);
 
-    private static final String ISSUES_URL = "https://github.com/ZoeWithTheE/NCI/issues";
-    private static final String MC_VERSION = FabricLoader.getInstance()
-            .getModContainer("minecraft")
-            .map(c -> c.getMetadata().getVersion().getFriendlyString())
-            .orElse("unknown");
-
-    private static volatile boolean disabled;
     private static volatile boolean registryReceived;
     private static volatile boolean pendingGroupRefresh;
     private static int helloAttempts;
@@ -92,72 +82,57 @@ public final class NexoClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(RegistryPayload.ID, (payload, context) -> {
             context.client().execute(() -> {
-                if (disabled) return;
-                try {
-                    if (registryReceived) {
-                        LOGGER.warn("Ignoring duplicate registry payload from server {} — already synced", payload.serverVersion());
-                        return;
-                    }
-                    registryReceived = applyRegistryPayload(payload, context.client());
-                } catch (Exception e) {
-                    handleError("registry payload handler", e, context.client());
+                if (registryReceived) {
+                    LOGGER.warn("Ignoring duplicate registry payload from server {} — already synced", payload.serverVersion());
+                    return;
                 }
+                registryReceived = applyRegistryPayload(payload, context.client());
             });
         });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
-            try {
-                boolean hadSyncedContent = hasSyncedContent();
-                clearSyncedState();
-                disabled = false;
-                registryReceived = false;
-                pendingGroupRefresh = hadSyncedContent;
-                helloAttempts = 0;
-                helloRetryCountdown = 0;
-                negotiatedProtocol = 0;
-                pendingServerVersion = null;
-                awaitingChunks = false;
-                chunkFinalizeCountdown = 0;
-                chunkAccumulator.clear();
-                sendHello("join");
-            } catch (Exception e) {
-                handleError("join event", e, client);
-            }
+            boolean hadSyncedContent = !syncedGroups.isEmpty();
+            clearSyncedState();
+            registryReceived = false;
+            pendingGroupRefresh = hadSyncedContent;
+            helloAttempts = 0;
+            helloRetryCountdown = 0;
+            negotiatedProtocol = 0;
+            pendingServerVersion = null;
+            awaitingChunks = false;
+            chunkFinalizeCountdown = 0;
+            chunkAccumulator.clear();
+            sendHello("join");
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (disabled) return;
-            try {
-                if (!registryReceived && !awaitingChunks && helloAttempts < MAX_HELLO_ATTEMPTS && client.getNetworkHandler() != null) {
-                    helloRetryCountdown--;
-                    if (helloRetryCountdown <= 0) {
-                        sendHello("retry");
-                    }
+            if (!registryReceived && !awaitingChunks && helloAttempts < MAX_HELLO_ATTEMPTS && client.getNetworkHandler() != null) {
+                helloRetryCountdown--;
+                if (helloRetryCountdown <= 0) {
+                    sendHello("retry");
                 }
+            }
 
-                if (awaitingChunks && chunkFinalizeCountdown > 0) {
-                    chunkFinalizeCountdown--;
-                    if (chunkFinalizeCountdown == 0) {
-                        rebuildSyncedGroups(new ArrayList<>(chunkAccumulator.values()));
-                        chunkAccumulator.clear();
-                        awaitingChunks = false;
-                        registryReceived = true;
-                        pendingGroupRefresh = true;
-                        LOGGER.info(
-                                "Registry sync complete from server {} using protocol {} ({} groups)",
-                                pendingServerVersion,
-                                negotiatedProtocol,
-                                syncedGroups.size()
-                        );
-                    }
+            if (awaitingChunks && chunkFinalizeCountdown > 0) {
+                chunkFinalizeCountdown--;
+                if (chunkFinalizeCountdown == 0) {
+                    rebuildSyncedGroups(new ArrayList<>(chunkAccumulator.values()));
+                    chunkAccumulator.clear();
+                    awaitingChunks = false;
+                    registryReceived = true;
+                    pendingGroupRefresh = true;
+                    LOGGER.info(
+                            "Registry sync complete from server {} using protocol {} ({} groups)",
+                            pendingServerVersion,
+                            negotiatedProtocol,
+                            syncedGroups.size()
+                    );
                 }
+            }
 
-                if (pendingGroupRefresh && refreshItemGroups(client)) {
-                    pendingGroupRefresh = false;
-                    LOGGER.info("Refreshed creative tab display after registry sync");
-                }
-            } catch (Exception e) {
-                handleError("client tick", e, client);
+            if (pendingGroupRefresh && refreshItemGroups(client)) {
+                pendingGroupRefresh = false;
+                LOGGER.info("Refreshed creative tab display after registry sync");
             }
         });
     }
@@ -176,61 +151,8 @@ public final class NexoClient implements ClientModInitializer {
         LOGGER.info("Sent nexo hello attempt {} ({}, mode={})", helloAttempts, reason, modern ? "modern" : "legacy");
     }
 
-    private static void handleError(String context, Throwable e, MinecraftClient client) {
-        disabled = true;
-        String serverVersion = pendingServerVersion != null ? pendingServerVersion : "unknown";
-
-        LOGGER.error("=== NCI FATAL ERROR ===");
-        LOGGER.error("NCI has encountered an unrecoverable error and has been disabled for this session.");
-        LOGGER.error("Please report this issue at: {}", ISSUES_URL);
-        LOGGER.error("  NCI version:    {}", CLIENT_IMPLEMENTATION_VERSION);
-        LOGGER.error("  Nexo version:   {}", serverVersion);
-        LOGGER.error("  Minecraft:      {}", MC_VERSION);
-        LOGGER.error("  Error context:  {}", context);
-        LOGGER.error("  Error:          {}", e.getMessage());
-        LOGGER.error("Upload your latest.log to https://mclo.gs and include the link in your report.", e);
-        LOGGER.error("=== END NCI ERROR ===");
-
-        if (client.player == null) return;
-
-        client.player.sendMessage(
-            Text.empty()
-                .append(Text.literal("[NCI] ").formatted(Formatting.RED, Formatting.BOLD))
-                .append(Text.literal("An error occurred, and NCI has been disabled for this session.").formatted(Formatting.RED)),
-            false
-        );
-        client.player.sendMessage(
-            Text.empty()
-                .append(Text.literal("Error: ").formatted(Formatting.GRAY))
-                .append(Text.literal(e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()).formatted(Formatting.WHITE)),
-            false
-        );
-        client.player.sendMessage(
-            Text.empty()
-                .append(Text.literal("NCI ").formatted(Formatting.GRAY))
-                .append(Text.literal(CLIENT_IMPLEMENTATION_VERSION).formatted(Formatting.WHITE))
-                .append(Text.literal(" | Nexo ").formatted(Formatting.GRAY))
-                .append(Text.literal(serverVersion).formatted(Formatting.WHITE))
-                .append(Text.literal(" | MC ").formatted(Formatting.GRAY))
-                .append(Text.literal(MC_VERSION).formatted(Formatting.WHITE)),
-            false
-        );
-        client.player.sendMessage(
-            Text.empty()
-                .append(Text.literal("Upload ").formatted(Formatting.GRAY))
-                .append(Text.literal("latest.log").formatted(Formatting.YELLOW))
-                .append(Text.literal(" to ").formatted(Formatting.GRAY))
-                .append(Text.literal("mclo.gs").formatted(Formatting.AQUA)
-                    .styled(s -> s.withClickEvent(new ClickEvent.OpenUrl(URI.create("https://mclo.gs")))))
-                .append(Text.literal(" and report at ").formatted(Formatting.GRAY))
-                .append(Text.literal("github.com/ZoeWithTheE/NCI/issues").formatted(Formatting.AQUA)
-                    .styled(s -> s.withClickEvent(new ClickEvent.OpenUrl(URI.create(ISSUES_URL))))),
-            false
-        );
-    }
-
     private static boolean applyRegistryPayload(RegistryPayload payload, MinecraftClient client) {
-        boolean hadSyncedContent = hasSyncedContent();
+        boolean hadSyncedContent = !syncedGroups.isEmpty();
         if (!isProtocolSupported(payload.negotiatedProtocol())) {
             clearSyncedState();
             pendingGroupRefresh = hadSyncedContent;
@@ -246,7 +168,6 @@ public final class NexoClient implements ClientModInitializer {
         if (payload.status() != STATUS_OK) {
             clearSyncedState();
             pendingGroupRefresh = hadSyncedContent;
-
             if (payload.status() == STATUS_INCOMPATIBLE) {
                 LOGGER.warn("Server {} rejected client: {}", payload.serverVersion(), payload.message());
             } else if (payload.status() == STATUS_NO_PERMISSION) {
@@ -274,6 +195,8 @@ public final class NexoClient implements ClientModInitializer {
         negotiatedProtocol = payload.negotiatedProtocol();
 
         if (negotiatedProtocol >= 2) {
+            // Protocol 2: server sends groups spread across multiple nexo:registry packets.
+            // Accumulate all chunks; finalize 5 ticks after the last one arrives.
             if (!awaitingChunks) {
                 chunkAccumulator.clear();
                 awaitingChunks = true;
@@ -292,11 +215,16 @@ public final class NexoClient implements ClientModInitializer {
                 }
             }
             chunkFinalizeCountdown = 5;
-            LOGGER.info("Received registry chunk from server {} (protocol {}, {} groups accumulated)",
-                    payload.serverVersion(), negotiatedProtocol, chunkAccumulator.size());
+            LOGGER.info(
+                    "Received registry chunk from server {} (protocol {}, {} groups accumulated)",
+                    payload.serverVersion(),
+                    negotiatedProtocol,
+                    chunkAccumulator.size()
+            );
             return false;
         }
 
+        // Protocol 1: single packet contains all groups.
         rebuildSyncedGroups(payload.groups());
         pendingGroupRefresh = true;
         LOGGER.info(
@@ -432,10 +360,6 @@ public final class NexoClient implements ClientModInitializer {
         resetTabSlots();
     }
 
-    private static boolean hasSyncedContent() {
-        return !syncedGroups.isEmpty();
-    }
-
     private static boolean refreshItemGroups(MinecraftClient client) {
         if (client.player == null) {
             return false;
@@ -519,21 +443,22 @@ public final class NexoClient implements ClientModInitializer {
                 PacketCodec.of(RegistryPayload::encode, RegistryPayload::decode);
 
         private static RegistryPayload decode(RegistryByteBuf buf) {
-            try {
-                int first = buf.readVarInt();
+            int first = buf.readVarInt();
 
-                int status;
-                int negotiatedProtocol;
-                String message;
-                String serverVersion;
-                List<String> serverFeatures = new ArrayList<>();
+            int status;
+            int negotiatedProtocol;
+            String message;
+            String serverVersion;
+            List<String> serverFeatures = new ArrayList<>();
 
-                if (first == REGISTRY_MAGIC) {
-                    status = buf.readVarInt();
-                    negotiatedProtocol = buf.readVarInt();
-                    serverVersion = buf.readString(64);
-                    message = buf.readString(256);
+            if (first == REGISTRY_MAGIC) {
+                status = buf.readVarInt();
+                negotiatedProtocol = buf.readVarInt();
+                serverVersion = buf.readString(64);
+                message = buf.readString(256);
 
+                // Server features were added in protocol 2; protocol 1 servers do not send this field
+                if (negotiatedProtocol >= 2) {
                     int featureCount = buf.readVarInt();
                     for (int i = 0; i < featureCount; i++) {
                         String feature = buf.readString(64);
@@ -541,43 +466,40 @@ public final class NexoClient implements ClientModInitializer {
                             serverFeatures.add(feature);
                         }
                     }
-                } else {
-                    negotiatedProtocol = first;
-                    status = buf.readVarInt();
-                    message = buf.readString(256);
-                    serverVersion = "legacy";
                 }
-
-                List<TabGroupData> groups = new ArrayList<>();
-                if (status == STATUS_OK) {
-                    int groupCount = buf.readVarInt();
-                    for (int groupIndex = 0; groupIndex < groupCount; groupIndex++) {
-                        String id = buf.readString(64);
-                        String title = buf.readString(64);
-                        ItemStack icon = ItemStack.OPTIONAL_PACKET_CODEC.decode(buf);
-
-                        int itemCount = buf.readVarInt();
-                        List<ItemStack> items = new ArrayList<>(itemCount);
-                        for (int itemIndex = 0; itemIndex < itemCount; itemIndex++) {
-                            items.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
-                        }
-
-                        groups.add(new TabGroupData(id, title, icon, List.copyOf(items)));
-                    }
-                }
-
-                return new RegistryPayload(
-                        negotiatedProtocol,
-                        status,
-                        message,
-                        serverVersion,
-                        List.copyOf(serverFeatures),
-                        List.copyOf(groups)
-                );
-            } catch (Exception e) {
-                handleError("registry payload decode", e, MinecraftClient.getInstance());
-                return new RegistryPayload(0, STATUS_OK, "", "unknown", List.of(), List.of());
+            } else {
+                negotiatedProtocol = first;
+                status = buf.readVarInt();
+                message = buf.readString(256);
+                serverVersion = "legacy";
             }
+
+            List<TabGroupData> groups = new ArrayList<>();
+            if (status == STATUS_OK) {
+                int groupCount = buf.readVarInt();
+                for (int groupIndex = 0; groupIndex < groupCount; groupIndex++) {
+                    String id = buf.readString(64);
+                    String title = buf.readString(64);
+                    ItemStack icon = ItemStack.OPTIONAL_PACKET_CODEC.decode(buf);
+
+                    int itemCount = buf.readVarInt();
+                    List<ItemStack> items = new ArrayList<>(itemCount);
+                    for (int itemIndex = 0; itemIndex < itemCount; itemIndex++) {
+                        items.add(ItemStack.OPTIONAL_PACKET_CODEC.decode(buf));
+                    }
+
+                    groups.add(new TabGroupData(id, title, icon, List.copyOf(items)));
+                }
+            }
+
+            return new RegistryPayload(
+                    negotiatedProtocol,
+                    status,
+                    message,
+                    serverVersion,
+                    List.copyOf(serverFeatures),
+                    List.copyOf(groups)
+            );
         }
 
         private static void encode(RegistryPayload payload, RegistryByteBuf buf) {
@@ -586,9 +508,11 @@ public final class NexoClient implements ClientModInitializer {
             buf.writeVarInt(payload.negotiatedProtocol);
             buf.writeString(payload.serverVersion, 64);
             buf.writeString(payload.message, 256);
-            buf.writeVarInt(payload.serverFeatures.size());
-            for (String feature : payload.serverFeatures) {
-                buf.writeString(feature, 64);
+            if (payload.negotiatedProtocol >= 2) {
+                buf.writeVarInt(payload.serverFeatures.size());
+                for (String feature : payload.serverFeatures) {
+                    buf.writeString(feature, 64);
+                }
             }
 
             if (payload.status == STATUS_OK) {
