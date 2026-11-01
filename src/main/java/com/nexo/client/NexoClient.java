@@ -45,7 +45,7 @@ public final class NexoClient implements ClientModInitializer {
 
     private static final int HELLO_RETRY_TICKS = 20;
     private static final int MAX_HELLO_ATTEMPTS = 6;
-    private static final int MAX_DYNAMIC_GROUP_TABS = 8;
+    private static final int MAX_DYNAMIC_GROUP_TABS = 64;
     private static final List<String> CLIENT_FEATURES = List.of(
             "hello.range.v1",
             "registry.envelope.v1",
