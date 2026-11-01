@@ -2,6 +2,10 @@ plugins {
     id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
+loom {
+    accessWidenerPath = file("src/main/resources/nexo_client.classtweaker")
+}
+
 version = project.mod_version
 group = project.maven_group
 

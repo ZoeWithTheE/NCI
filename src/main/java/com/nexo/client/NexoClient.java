@@ -22,6 +22,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.CreativeModeTab;
+import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.slf4j.Logger;
@@ -374,7 +375,25 @@ public final class NexoClient implements ClientModInitializer {
             return false;
         }
 
-        return true;
+        // Vanilla only rebuilds creative tab contents when features, permissions or the registry change,
+        // so if the tabs were already built before the sync arrived, the Nexo items would never show up
+        // (until a server switch hands the client a new registry). Force a rebuild with the same parameters.
+        CreativeModeTab.ItemDisplayParameters params = CreativeModeTabs.CACHED_PARAMETERS;
+        if (params == null || params.holders() != player.level().registryAccess()) {
+            // Not built yet for this connection: vanilla builds them, with our items, when the inventory opens.
+            return true;
+        }
+
+        try {
+            CreativeModeTabs.buildAllTabContents(params);
+            List<ItemStack> searchItems = List.copyOf(CreativeModeTabs.searchTab().getDisplayItems());
+            player.connection.searchTrees().updateCreativeTooltips(params.holders(), searchItems);
+            player.connection.searchTrees().updateCreativeTags(searchItems);
+            return true;
+        } catch (RuntimeException e) {
+            LOGGER.warn("Failed to rebuild creative tab contents; will retry", e);
+            return false;
+        }
     }
 
     private record HelloPayload(

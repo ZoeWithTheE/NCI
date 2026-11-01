@@ -1,0 +1,3 @@
+classTweaker	v1	official
+accessible	field	net/minecraft/world/item/CreativeModeTabs	CACHED_PARAMETERS	Lnet/minecraft/world/item/CreativeModeTab$ItemDisplayParameters;
+accessible	method	net/minecraft/world/item/CreativeModeTabs	buildAllTabContents	(Lnet/minecraft/world/item/CreativeModeTab$ItemDisplayParameters;)V

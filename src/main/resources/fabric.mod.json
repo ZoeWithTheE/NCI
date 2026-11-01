@@ -5,6 +5,7 @@
   "name": "Nexo Client",
   "description": "Fabric client for Nexo registry sync.",
   "environment": "client",
+  "accessWidener": "nexo_client.classtweaker",
   "entrypoints": {
     "client": [
       "com.nexo.client.NexoClient"
