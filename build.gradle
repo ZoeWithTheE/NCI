@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.15.3'
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -18,9 +18,8 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 }
 
 processResources {
@@ -32,21 +31,21 @@ processResources {
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 21
+    it.options.release = 25
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
-    targetCompatibility = JavaVersion.VERSION_21
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
     withSourcesJar()
 }
 
 def releaseJarBaseName = "NCI-v${project.mod_version}-${project.minecraft_version}"
 
-tasks.named("remapJar") {
+tasks.named("jar") {
     archiveFileName = "${releaseJarBaseName}.jar"
 }
 
-tasks.named("remapSourcesJar") {
+tasks.named("sourcesJar") {
     archiveFileName = "${releaseJarBaseName}-sources.jar"
 }
