@@ -5,14 +5,16 @@
   "name": "Nexo Client",
   "description": "Fabric client for Nexo registry sync.",
   "environment": "client",
+  "accessWidener": "nexo_client.classtweaker",
   "entrypoints": {
     "client": [
       "com.nexo.client.NexoClient"
     ]
   },
   "depends": {
-    "fabricloader": ">=0.15.0",
-    "minecraft": "~1.21.11",
+    "fabricloader": ">=0.19.0",
+    "minecraft": "~26.3",
+    "java": ">=25",
     "fabric-api": "*"
   }
 }
